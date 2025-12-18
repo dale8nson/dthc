@@ -6,25 +6,56 @@ fn main() {
         cf!(
 
           decl -> importdecl | assdecl.
-          impdecl -> "import" ident ("," ident)* "from" ident | "import" ident.
-          assdecl -> ident (params)? "=" expr.
+          importdecl -> "import" ident ("," ident)* "from" ident | "import" ident.
+          assdecl -> ident (params)? "=" expr | cmpndassdecl.
+          cmpndassdecl => ident cmpndass expr // ?
           params -> param | param "," params.
-          actions -> action "for" item "in" iterable.
+          expr -> infixr | infixl | comp | assexpr.
+          comp -> expr "for" item "in" iterable.
+          assexpr -> expr cmpndass expr
           range -> openR | closedR | halfL | halfR.
           openR -> "[" ord "," ord "]" | ord le ord le ord.
           closedR -> "(" ord "," ord ")" | ord lt ord lt ord.
           halfL -> "[" ord "," ord ")" | ord le ord lt ord.
           halfR -> "(" ord "," ord "]" | ord lt ord le ord.
-          digit -> 0..9.
-          op -> ass | eq | lt | gt | le | ge | and | or | not.
+          digit -> "0".."9".
+          alpha -> "A"..="Z" | "a"..= "z".
+          op -> ass
+            | cmpndass
+            | plus
+            | min
+            | mul
+            | div
+            | mod
+            | eq
+            | ne
+            | lt
+            | gt
+            | le
+            | ge
+            | and
+            | or
+            | not
+            | opt.
           ass -> "=".
+          cmpndass -> "+="
+            | "-="
+            | "*="
+            | "/="
+          plus -> "+".
+          min -> "-".
+          mul -> "*".
+          div -> "/".
+          opt -> "?".
           eq -> "==".
+          ne -> "!="
           lt -> "<".
           gt -> ">".
           le -> "<=".
           ge -> ">=".
-          and -> "&&".
           or -> "||".
+          and -> "&&".
+
         )
     );
 }
