@@ -8,11 +8,11 @@ fn main() {
           decl -> importdecl | assdecl.
           importdecl -> "import" ident ("," ident)* "from" ident | "import" ident.
           assdecl -> ident (params)? "=" expr | cmpndassdecl.
-          cmpndassdecl => ident cmpndass expr // ?
+          cmpndassdecl -> ident cmpndass expr. // ?
           params -> param | param "," params.
           expr -> infixr | infixl | comp | assexpr.
           comp -> expr "for" item "in" iterable.
-          assexpr -> expr cmpndass expr
+          assexpr -> expr cmpndass expr.
           range -> openR | closedR | halfL | halfR.
           openR -> "[" ord "," ord "]" | ord le ord le ord.
           closedR -> "(" ord "," ord ")" | ord lt ord lt ord.
@@ -41,14 +41,14 @@ fn main() {
           cmpndass -> "+="
             | "-="
             | "*="
-            | "/="
+            | "/=".
           plus -> "+".
           min -> "-".
           mul -> "*".
           div -> "/".
           opt -> "?".
           eq -> "==".
-          ne -> "!="
+          ne -> "!=".
           lt -> "<".
           gt -> ">".
           le -> "<=".

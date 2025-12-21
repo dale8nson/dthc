@@ -10,6 +10,9 @@ use std::{
     vec::Vec,
 };
 
+const OPS: [&str; 5] = ["..", "..=", "|", ".", "->"];
+
+#[derive(Debug)]
 struct StringLexer<'a> {
     iter: Chars<'a>,
     pk: Option<Option<char>>,
@@ -62,9 +65,11 @@ impl<'a> StringLexer<'a> {
 }
 
 fn tokenize_str(string: &str) -> TokenStream {
+    // eprintln!("tokenize_str string: {string:?}");
     let mut ts = TokenStream::new();
     let mut delimiter_stack = Vec::<Delimiter>::new();
     let mut lexer = StringLexer::new(string);
+    // println!("lexer: {lexer:?}");
     // lexer.skip_ws();
     let mut tt_stack = Vec::<Vec<TokenTree>>::from([Vec::<TokenTree>::new()]);
 
@@ -130,7 +135,7 @@ fn tokenize_str(string: &str) -> TokenStream {
                         break;
                     }
                 }
-                // print!("{string}");
+                // println!("ident: {string}");
                 match string.as_str() {
                     _ => {
                         tt_stack
@@ -163,7 +168,7 @@ fn tokenize_str(string: &str) -> TokenStream {
                             string_literal.push(lexer.next().unwrap());
 
                             if let Some(esc) = lexer.peek().cloned() {
-                                print!("esc {esc}");
+                                // print!("esc {esc}");
                                 match esc {
                                     'n' | 't' | 'v' | 'r' | 'b' | 'a' | 'f' | '0' | '\\' | '\n' => {
                                         string_literal.push(lexer.next().unwrap());
@@ -205,7 +210,7 @@ fn tokenize_str(string: &str) -> TokenStream {
                             lexer.next();
                         }
                         _ => {
-                            println!("string_literal: {string_literal}");
+                            // println!("string_literal: {string_literal}");
                             panic!("207 Invalid character: {:#?}", pk);
                         }
                     }
@@ -235,7 +240,7 @@ fn tokenize_str(string: &str) -> TokenStream {
                                 // println!("{pk}");
                                 Spacing::Alone
                             };
-                            println!("{pk}");
+                            // println!("{pk}");
                             tt_stack
                                 .last_mut()
                                 .unwrap()
@@ -244,7 +249,7 @@ fn tokenize_str(string: &str) -> TokenStream {
                         } else {
                             number_literal.push(sign);
                             number_literal.push(lexer.next().unwrap());
-                            print!("{number_literal}");
+                            // print!("{number_literal}");
                         }
                     }
                 }
@@ -386,25 +391,31 @@ fn tokenize_str(string: &str) -> TokenStream {
                 // println!("ts: {ts:?}");
             }
             _ if ch.is_ascii_punctuation() && !matches!(ch, '"' | '\'') => {
-                // print!("{ch}");
+                // print!("{}", ch.clone());
                 let mut punct = lexer.next().unwrap();
-
+                let mut op = String::new();
                 while let Some(c) = lexer.peek().cloned()
                     && c.is_ascii_punctuation()
                     && !matches!(c, '"' | '\'')
                 {
+                    op.push(c.clone());
+                    // println!("op: {op}");
                     tt_stack
                         .last_mut()
                         .unwrap()
                         .push(TokenTree::Punct(Punct::new(punct, Spacing::Joint)));
-                    print!("{:#?}", lexer.next());
-                    punct = c;
+                    // print!("{:#?}", lexer.next());
+                    
+                    punct = lexer.next().unwrap();
                 }
+                
                 tt_stack
                     .last_mut()
                     .unwrap()
                     .push(TokenTree::Punct(Punct::new(punct, Spacing::Alone)));
-                print!("{:#?}", lexer.next());
+
+                
+                // print!("{:#?}", lexer.next());
                 // print!("{tt_stack:#?}");
             }
             '\n' => {
@@ -424,6 +435,8 @@ fn tokenize_str(string: &str) -> TokenStream {
     }
     // println!("tt_stack: {tt_stack:#?}");
     ts.extend(tt_stack.pop().unwrap());
+    // println!("token stream: {ts:?}");
+    // print!("\n");
     ts
 }
 
@@ -447,14 +460,15 @@ struct EOS;
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 enum Symbol {
-    T(String, Box<Option<Symbol>>),
-    NT(String, Box<Option<Symbol>>),
-    HalfOpenRange(Box<Symbol>, Box<Option<Symbol>>),
-    OpenRange(Box<Symbol>, Box<Option<Symbol>>),
-    Optional(Box<Symbol>, Box<Option<Symbol>>),
-    Star(Box<Symbol>, Box<Option<Symbol>>),
-    Plus(Box<Symbol>, Box<Option<Symbol>>),
-    Delimited(Box<Symbol>, Box<Option<Symbol>>),
+    Compound(Box<Symbol>, Box<Symbol>),
+    HalfOpenRange(Box<Symbol>, Box<Symbol>),
+    OpenRange(Box<Symbol>, Box<Symbol>),
+    T(String),
+    NT(String),
+    Optional(Box<Symbol>),
+    Star(Box<Symbol>),
+    Plus(Box<Symbol>),
+    Delimited(Box<Symbol>),
     Error(String),
     EOE,
     EOS,
@@ -470,63 +484,19 @@ impl Default for Symbol {
 impl ToString for Symbol {
     fn to_string(&self) -> String {
         match self {
-            Self::NT(string, rhs) => {
-                format!(
-                    "{} {}",
-                    string.clone(),
-                    rhs.clone().unwrap_or(Symbol::None).to_string()
-                )
-            }
-            Self::T(string, rhs) => format!(
-                "{} {}",
-                string.clone(),
-                rhs.clone().unwrap_or(Symbol::None).to_string()
-            ),
-            Self::HalfOpenRange(min, max) => {
-                format!(
-                    "{}..{}",
-                    min.to_string(),
-                    max.clone().unwrap_or(Symbol::None).to_string()
-                )
-            }
-            Self::OpenRange(min, max) => format!(
-                "{}..={}",
-                min.to_string(),
-                max.clone().unwrap_or(Symbol::None).to_string()
-            ),
-            Self::Optional(rule, rest) => {
-                format!(
-                    " ({})? {}",
-                    rule.to_string(),
-                    rest.clone().unwrap_or(Symbol::None).to_string()
-                )
-            }
-            Self::Star(rule, rest) => {
-                format!(
-                    " ({})* {}",
-                    rule.to_string(),
-                    rest.clone().unwrap_or(Symbol::None).to_string()
-                )
-            }
-
-            Self::Plus(rule, rest) => {
-                format!(
-                    " ({})+ {}",
-                    rule.to_string(),
-                    rest.clone().unwrap_or(Symbol::None).to_string()
-                )
-            }
-            Self::Delimited(rule, rest) => {
-                format!(
-                    " ({}) {}",
-                    rule.to_string(),
-                    rest.clone().unwrap_or(Symbol::None).to_string()
-                )
-            }
-            Self::EOE => " | ".to_string(),
+            Self::Compound(lhs, rhs) => format!("{} {}", lhs.to_string(), rhs.to_string()),
+            Self::OpenRange(lhs, rhs) => format!("{}..={}", lhs.to_string(), rhs.to_string()),
+            Self::HalfOpenRange(lhs, rhs) => format!("{}..{}", lhs.to_string(), rhs.to_string()),
+            Self::NT(ident) => format!("{}", ident.clone()),
+            Self::T(lit) => format!("{}", lit.clone()),
+            Self::Optional(sym) => format!(" ({})?", sym.to_string()),
+            Self::Plus(sym) => format!("({})+", sym.to_string()),
+            Self::Star(sym) => format!("({})*", sym.to_string()),
+            Self::Delimited(sym) => format!(" ({})", sym.to_string()),
+            Self::EOE => "| ".to_string(),
             Self::EOS => ".".to_string(),
-            Self::Error(msg) => format!("Error: {msg}"),
-            Self::None => "None".to_string(),
+            Self::None => "".to_string(),
+            Self::Error(msg) => format!("\n\nERROR: {}\n\n", msg.clone()),
         }
     }
 }
@@ -534,7 +504,7 @@ impl ToString for Symbol {
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum Primary {
     LHS(LHS),
-    Delimited(Option<Symbol>),
+    Delimited(Symbol),
     None,
 }
 
@@ -549,7 +519,27 @@ enum Op {
     Infix(InfixOp),
     Pipe,
     Stop,
+    Arrow,
     None,
+}
+
+impl Display for Op {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            Self::Arrow => "->",
+            Self::Pipe => "|",
+            Self::Stop => ".",
+            Self::Infix(infix) => {
+                match infix {
+                    InfixOp::OpenRange => "..=",
+                    InfixOp::HalfOpenRange => "..",
+                }
+            }
+            _ => "",
+        };
+        write!(f, "{}", string)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -564,6 +554,17 @@ enum Rep {
 enum LHS {
     Ident(String),
     Literal(String),
+    None,
+}
+
+impl LHS {
+    pub fn symbol(&self) -> Symbol {
+        match self {
+            Self::Ident(ident) => Symbol::NT(ident.clone()),
+            Self::Literal(lit) => Symbol::T(lit.clone()),
+            Self::None => Symbol::None,
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -575,7 +576,7 @@ struct P {
 impl P {
     pub fn is_terminal(&self) -> bool {
         if self.rules.len() == 1 {
-            if let Symbol::T(_, _) = self.rules[0] {
+            if let Symbol::T(_) = self.rules[0] {
                 true
             } else {
                 false
@@ -596,18 +597,18 @@ impl Display for P {
                 .iter()
                 .map(|r| r.to_string())
                 .collect::<Vec<String>>()
-                .join(" ")
+                .join("")
         )?;
         Ok(())
     }
 }
 
-const OPS: [&str; 2] = ["..", "..="];
-
 #[derive(Clone)]
 struct TokenLexer {
     iter: Peekable<IntoIter>,
     peeked: Option<Option<TokenTree>>,
+    stack: Vec<Option<Symbol>>,
+    eos: bool,
 }
 
 impl Iterator for TokenLexer {
@@ -625,6 +626,8 @@ impl Default for TokenLexer {
         Self {
             iter: TokenStream::new().into_iter().peekable(),
             peeked: None,
+            stack: Vec::<Option<Symbol>>::new(),
+            eos: false,
         }
     }
 }
@@ -634,6 +637,8 @@ impl TokenLexer {
         Self {
             iter: ts.into_iter().peekable(),
             peeked: None,
+            stack: Vec::<Option<Symbol>>::new(),
+            eos: false,
         }
     }
 
@@ -654,6 +659,18 @@ impl TokenLexer {
         }
         self.iter.clone_from(&iter);
         v
+    }
+
+    pub fn push(&mut self, sym: &Option<Symbol>) {
+        self.stack.push(sym.clone());
+    }
+
+    pub fn pop(&mut self) -> Option<Option<Symbol>> {
+        self.stack.pop()
+    }
+
+    pub fn eos(&mut self) -> bool {
+        std::mem::take(&mut self.eos)
     }
 
     pub fn take_as_string(&mut self) -> Option<String> {
@@ -721,9 +738,15 @@ impl TokenLexer {
 
         while let Some(TokenTree::Punct(punct)) = self.peek().cloned() {
             if OPS.iter().any(|op| {
-                let conc = String::from_iter([s.clone(), punct.as_char().to_string().clone()]);
-                let op_str = op[..s.len()].to_string();
-                s.len() <= op.len() && conc == op_str
+                // println!("op: {op:?}");
+                let conc = String::from_iter([s.clone(), punct.as_char().to_string()]);
+                // println!("conc: {conc:?}");
+                let mut op_str = op.to_string();
+                if conc.len() <= op.len() {
+                    op_str = op[..conc.len()].to_string();
+                    // println!("op_str: {op_str:?}");
+                }
+                conc.len() <= op.len() && conc == op_str
             }) {
                 s.push(punct.as_char());
                 self.next();
@@ -732,7 +755,10 @@ impl TokenLexer {
             }
         }
 
+        // println!("s: {s:?}");
+
         match s.as_str() {
+            "->" => Op::Arrow,
             "..=" => Op::Infix(InfixOp::OpenRange),
             ".." => Op::Infix(InfixOp::HalfOpenRange),
             "|" => Op::Pipe,
@@ -741,63 +767,27 @@ impl TokenLexer {
         }
     }
 
-    fn parse_infix(&mut self, lhs: LHS, op: InfixOp) -> Option<Symbol> {
-        let rhs = self.parse_rule();
-        match op {
-            InfixOp::OpenRange => Some(Symbol::OpenRange(
-                Box::new(self.parse_lhs(lhs, rhs)),
-                Box::new(self.parse_rule()),
-            )),
-            InfixOp::HalfOpenRange => Some(Symbol::HalfOpenRange(
-                Box::new(self.parse_lhs(lhs, rhs)),
-                Box::new(self.parse_rule()),
-            )),
-        }
-    }
-
-    fn parse_lhs(&self, lhs: LHS, rhs: Option<Symbol>) -> Symbol {
-        match lhs {
-            LHS::Ident(s) => Symbol::NT(s, Box::new(rhs)),
-            LHS::Literal(s) => Symbol::T(s, Box::new(rhs)),
-        }
-    }
-
-    fn parse_postfix(&mut self, lhs: LHS, op: Op) -> Option<Symbol> {
-        match op {
-            Op::Pipe => Some(self.parse_lhs(lhs, Some(Symbol::EOE))),
-            Op::Stop => Some(self.parse_lhs(lhs, Some(Symbol::EOS))),
-            Op::None => {
-                let rhs = self.parse_rule();
-                Some(self.parse_lhs(lhs, rhs))
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn parse_expr(&mut self, lhs: LHS, op: Op) -> Option<Symbol> {
-        match op {
-            Op::Infix(infix_op) => self.parse_infix(lhs, infix_op),
-            _ => self.parse_postfix(lhs, op),
-        }
-    }
-
     fn encode_lhs(&self, lhs: TokenTree) -> LHS {
         match lhs {
             TokenTree::Ident(ident) => LHS::Ident(ident.to_string()),
             TokenTree::Literal(lit) => LHS::Literal(lit.to_string()),
-            _ => unreachable!(),
+            _ => {
+                // println!("lhs: {lhs:?}");
+                LHS::None
+            }
         }
     }
 
-    fn encode_delimited(&self, grp: Group) -> Option<Symbol> {
-        let stream = grp.stream();
-        let mut lexer = TokenLexer::new(stream);
-        match grp.delimiter().clone() {
-            Delimiter::Parenthesis => lexer.parse_rule(),
-            _ => Some(Symbol::Error(format!(
-                "unsupported delimiter: {:?}",
-                grp.delimiter()
-            ))),
+    fn encode_delimited(&mut self, grp: Group) -> Symbol {
+        let mut lexer = TokenLexer::new(grp.stream());
+        let rep = self.encode_rep();
+        let sym = lexer.parse_rule();
+        // println!("encode_delimited sym: {sym:?}");
+        match rep {
+            Rep::Optional => Symbol::Compound(Box::new(Symbol::Optional(Box::new(sym))), Box::new(self.parse_rule())),
+            Rep::Plus => Symbol::Compound(Box::new(Symbol::Plus(Box::new(sym))), Box::new(self.parse_rule())),
+            Rep::Star => Symbol::Compound(Box::new(Symbol::Star(Box::new(sym))), Box::new(self.parse_rule())),
+            Rep::None => Symbol::Compound(Box::new(Symbol::Delimited(Box::new(sym))), Box::new(self.parse_rule())),
         }
     }
 
@@ -818,62 +808,110 @@ impl TokenLexer {
         rep
     }
 
-    fn encode_primary(&self, tt: TokenTree) -> Primary {
+    fn encode_primary(&mut self, tt: TokenTree) -> Primary {
         match tt {
-            TokenTree::Ident(_) | TokenTree::Literal(_) => Primary::LHS(self.encode_lhs(tt)),
+            TokenTree::Ident(_) | TokenTree::Literal(_) => {
+                let lhs = self.encode_lhs(tt);
+                // println!("encode_primary lhs: {lhs:?}");
+                Primary::LHS(lhs)
+            }
             TokenTree::Group(grp) => Primary::Delimited(self.encode_delimited(grp)),
             _ => Primary::None,
         }
     }
 
-    fn parse_rule(&mut self) -> Option<Symbol> {
+    fn parse_infix(&mut self, lhs: LHS, op: InfixOp) -> Symbol {
+        // println!("parse_infix lhs: {lhs:?} op: {op:?}");
+        let rhs = self.parse_rule();
+        // println!("parse_infix rhs: {rhs:?}");
+        let infix_expr = match op {
+            InfixOp::OpenRange => Symbol::OpenRange(Box::new(lhs.symbol()), Box::new(rhs)),
+            InfixOp::HalfOpenRange => Symbol::HalfOpenRange(Box::new(lhs.symbol()), Box::new(rhs)),
+        };
+
+        // println!("parse_infix infix_expr: {:?}", &infix_expr);
+        // println!("parse_infix eos: {}", self.eos);
+        infix_expr
+    }
+
+    fn parse_postfix(&mut self, lhs: LHS, op: Op) -> Symbol {
+        // println!("parse_postfix lhs: {lhs:?} op: {op:?}");
+        let postfix = match op {
+            Op::Pipe => Symbol::Compound(Box::new(lhs.symbol()), Box::new(Symbol::EOE)),
+            Op::Stop => {
+                self.eos = true;
+                Symbol::Compound(Box::new(lhs.symbol()), Box::new(Symbol::EOS))
+            }
+            Op::None => {
+                Symbol::Compound(Box::new(lhs.symbol()), Box::new(self.parse_rule()))
+            }
+            _ => Symbol::Error(format!("unexpected expression: {} {op}\n Are you missing a full stop? 🤔", lhs.symbol().to_string())),
+        };
+        // println!("parse_postfix postfix: {postfix:?}");
+        postfix
+    }
+
+    fn parse_expr(&mut self, lhs: LHS, op: Op) -> Symbol {
+        // println!("parse_expr lhs: {lhs:?} op: {op:?}");
+        
+        let expr = match op {
+            Op::Infix(infix_op) => {
+                let infix = self.parse_infix(lhs, infix_op);
+                // let next = self.parse_rule();
+                // println!("parse_expr infix: {:?} next: {:?}", &infix, &next);
+
+                // Symbol::Compound(Box::new(infix), Box::new(next))
+                infix
+            }
+            Op::Pipe => Symbol::Compound(Box::new(lhs.symbol()), Box::new(Symbol::EOE)),
+            Op::Stop => {
+                self.eos = true;
+                Symbol::Compound(Box::new(lhs.symbol()), Box::new(Symbol::EOS))
+            }
+            _ => self.parse_postfix(lhs, op),
+        };
+
+        // println!("parse_expr expr: {expr:?}");
+        expr
+    }
+
+    fn parse_rule(&mut self) -> Symbol {
         if let Some(tt) = self.peek().cloned() {
-            println!("tt: {tt:?}");
-            self.next();
-            match self.encode_primary(tt) {
+            // println!("tt: {tt:?}");
+            let token = self.next().unwrap();
+            let prim = self.encode_primary(tt);
+            match prim {
                 Primary::LHS(lhs) => {
                     let op = self.encode_op();
-                    println!("op: {op:?}");
-                    if let Some(expr) = self.parse_expr(lhs, op) {
-                        println!("{}", expr.to_string());
-                        Some(expr)
-                    } else {
-                        None
-                    }
+                    // println!("lhs: {lhs:?} op: {op:?}");
+                    let expr = self.parse_expr(lhs, op);
+                    // println!("parse_rule expr: {:?}", expr);
+                    // println!("parse_rule eos: {}", self.eos);
+                    return expr;
                 }
-                Primary::Delimited(sym) => {
-                    let rep = self.encode_rep();
-                    if let Some(lhs) = sym {
-                        let rhs = self.parse_rule();
-                        match rep {
-                            Rep::Optional => Some(Symbol::Optional(Box::new(lhs), Box::new(rhs))),
-                            Rep::Plus => Some(Symbol::Plus(Box::new(lhs), Box::new(rhs))),
-                            Rep::Star => Some(Symbol::Star(Box::new(lhs), Box::new(rhs))),
-                            Rep::None => Some(Symbol::Delimited(Box::new(lhs), Box::new(rhs))),
-                        }
-                    } else {
-                        None
-                    }
-                }
-                Primary::None => None,
+                Primary::Delimited(sym) => sym,
+                Primary::None => Symbol::Error(format!("invalid primary token: {token:?}")),
             }
         } else {
-            None
+            Symbol::None
         }
     }
 
     pub fn parse_rules(&mut self) -> Option<Vec<Symbol>> {
         let mut rules = Vec::<Symbol>::new();
-        while let Some(tt) = self.peek().cloned() {
-            println!("parse_rules tt: {tt:?}");
+        while self.peek().is_some() {
+            // println!("parse_rules tt: {tt:?}");
             let rule = self.parse_rule();
-            // println!("rule: {rule:#?}");
-
-            if let Some(r) = rule {
-                rules.push(r);
+            // println!("parse_rules rule: {rule:?}");
+            
+            rules.push(rule);
+            // println!("parse_rules eos: {}", self.eos);
+            if self.eos() {
+                break;
             }
+            
         }
-        // println!("\n\nrules: \n{rules:#?}\n\n");
+        // println!("parse_rules rules: {rules:?}");
         Some(rules)
     }
 }
@@ -951,57 +989,57 @@ pub fn cf(__ts: TokenStream) -> TokenStream {
     let mut __output = TokenStream::new();
     let mut __lexer = TokenLexer::new(__ts);
     let mut clone = __lexer.clone();
-    let mut peek = clone.peek();
+    // let mut peek = clone.peek();
     let mut ts = BTreeSet::<T>::new();
     let mut nts = BTreeSet::<NT>::new();
     let mut ps = Vec::<P>::new();
 
-    while let Some(__tt) = peek.cloned() {
+    while let Some(__tt) = __lexer.peek().cloned() {
+        // println!("__tt: {__tt:?}");
         // println!("__tt: {:#?}", __tt.span().source_text());
         match __tt {
             TokenTree::Ident(ident) => {
                 let nt = ident.to_string();
                 __lexer.next();
-                if let Some(arrow) = __lexer.take_as_string() {
-                    // print!(" {arrow} ");
-                    if arrow.as_str() != "->" {
-                        panic!("expected -> operator, found {}", arrow.as_str());
-                    }
+                if !matches!(__lexer.encode_op(), Op::Arrow) {
+                    panic!("expected -> operator");
                 }
+
                 if let Some(rules) = __lexer.parse_rules() {
                     // println!("\n\nrhs: {:#?}\n\n", &rhs);
                     let production_rule = P { nt, rules };
                     if ps.iter().any(|p| *p == production_rule) {
                         eprintln!("Warning: duplicate production rule: {production_rule:?}");
                     }
-                    println!("P: {production_rule}");
+                    // println!("P: {production_rule}");
+                    // println!("P: {production_rule:?}");
                     ps.push(production_rule);
                 }
             }
-
             other => panic!("expected identifier, got {other:?}"),
         }
 
-        clone = __lexer.clone();
-        peek = clone.peek();
-        // println!("1082 peek: {peek:#?}");
+        // clone = __lexer.clone();
+        // peek = clone.peek();
     }
 
-    // println!("ps: {ps:#?}");
-    // ps.iter().for_each(|p| println!("{p}"));
-    //
-
-    let string_vec = ps.iter().map(|p| format!("{}", p)).collect::<Vec<String>>();
+    let string_vec = ps.iter().map(|p| format!("{p}")).collect::<Vec<String>>();
     // println!("string_vec: {string_vec:#?}");
+
+    // println!("{}", tokenize_str(string_vec[0].clone().as_str()));
+
     let mut tts = string_vec
         .iter()
-        .map(|string| tokenize_str(format!("{}", string).as_str()).to_string())
+        .map(|string| tokenize_str(format!("{}", string.as_str()).as_str()).to_string())
+        // .into_iter()
         .collect::<Vec<String>>()
-        .join(".\n");
-    // println!("tts: {tts}");
-    tts.push('.');
+        .join("\n");
+
+    tts.push_str("\n👍🏻");
 
     __output.extend([TokenTree::Literal(Literal::string(tts.as_str()))]);
+
+    // __output.extend([TokenTree::Literal(Literal::string("\n👍🏻"))]);
 
     __output
 }
