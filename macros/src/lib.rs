@@ -1,14 +1,16 @@
+mod symbol;
+// pub(crate) mod parser;
+pub(crate) mod Parser;
+
 use proc_macro::{
     Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree,
     token_stream::IntoIter,
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::{Display, Error as FmtError, Formatter},
-    iter::Peekable,
-    str::{Chars, FromStr},
-    vec::Vec,
+    any::Any, collections::{BTreeSet}, fmt::{Display, Error as FmtError, Formatter}, iter::Peekable, str::{Chars, FromStr}, vec::Vec
 };
+
+use symbol::{Symbol, Op, InfixOp, Rep, P, LHS, Primary};
 
 const OPS: [&str; 5] = ["..", "..=", "|", ".", "->"];
 
@@ -391,7 +393,7 @@ fn tokenize_str(string: &str) -> TokenStream {
                 // println!("ts: {ts:?}");
             }
             _ if ch.is_ascii_punctuation() && !matches!(ch, '"' | '\'') => {
-                // print!("{}", ch.clone());
+                println!("{}", ch.clone());
                 let mut punct = lexer.next().unwrap();
                 let mut op = String::new();
                 while let Some(c) = lexer.peek().cloned()
@@ -399,22 +401,23 @@ fn tokenize_str(string: &str) -> TokenStream {
                     && !matches!(c, '"' | '\'')
                 {
                     op.push(c.clone());
-                    // println!("op: {op}");
+                    
                     tt_stack
                         .last_mut()
                         .unwrap()
                         .push(TokenTree::Punct(Punct::new(punct, Spacing::Joint)));
                     // print!("{:#?}", lexer.next());
-                    
+
                     punct = lexer.next().unwrap();
                 }
-                
+
+                println!("op: {op:?}");
+
                 tt_stack
                     .last_mut()
                     .unwrap()
                     .push(TokenTree::Punct(Punct::new(punct, Spacing::Alone)));
 
-                
                 // print!("{:#?}", lexer.next());
                 // print!("{tt_stack:#?}");
             }
@@ -452,156 +455,12 @@ impl Display for NT {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct S(String);
+
 
 #[derive(Debug)]
 struct EOS;
 
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-enum Symbol {
-    Compound(Box<Symbol>, Box<Symbol>),
-    HalfOpenRange(Box<Symbol>, Box<Symbol>),
-    OpenRange(Box<Symbol>, Box<Symbol>),
-    T(String),
-    NT(String),
-    Optional(Box<Symbol>),
-    Star(Box<Symbol>),
-    Plus(Box<Symbol>),
-    Delimited(Box<Symbol>),
-    Error(String),
-    EOE,
-    EOS,
-    None,
-}
 
-impl Default for Symbol {
-    fn default() -> Self {
-        Self::None
-    }
-}
-
-impl ToString for Symbol {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Compound(lhs, rhs) => format!("{} {}", lhs.to_string(), rhs.to_string()),
-            Self::OpenRange(lhs, rhs) => format!("{}..={}", lhs.to_string(), rhs.to_string()),
-            Self::HalfOpenRange(lhs, rhs) => format!("{}..{}", lhs.to_string(), rhs.to_string()),
-            Self::NT(ident) => format!("{}", ident.clone()),
-            Self::T(lit) => format!("{}", lit.clone()),
-            Self::Optional(sym) => format!(" ({})?", sym.to_string()),
-            Self::Plus(sym) => format!("({})+", sym.to_string()),
-            Self::Star(sym) => format!("({})*", sym.to_string()),
-            Self::Delimited(sym) => format!(" ({})", sym.to_string()),
-            Self::EOE => "| ".to_string(),
-            Self::EOS => ".".to_string(),
-            Self::None => "".to_string(),
-            Self::Error(msg) => format!("\n\nERROR: {}\n\n", msg.clone()),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-enum Primary {
-    LHS(LHS),
-    Delimited(Symbol),
-    None,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-enum InfixOp {
-    OpenRange,
-    HalfOpenRange,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-enum Op {
-    Infix(InfixOp),
-    Pipe,
-    Stop,
-    Arrow,
-    None,
-}
-
-impl Display for Op {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let string = match self {
-            Self::Arrow => "->",
-            Self::Pipe => "|",
-            Self::Stop => ".",
-            Self::Infix(infix) => {
-                match infix {
-                    InfixOp::OpenRange => "..=",
-                    InfixOp::HalfOpenRange => "..",
-                }
-            }
-            _ => "",
-        };
-        write!(f, "{}", string)?;
-        Ok(())
-    }
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-enum Rep {
-    Optional,
-    Plus,
-    Star,
-    None,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-enum LHS {
-    Ident(String),
-    Literal(String),
-    None,
-}
-
-impl LHS {
-    pub fn symbol(&self) -> Symbol {
-        match self {
-            Self::Ident(ident) => Symbol::NT(ident.clone()),
-            Self::Literal(lit) => Symbol::T(lit.clone()),
-            Self::None => Symbol::None,
-        }
-    }
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
-struct P {
-    nt: String,
-    rules: Vec<Symbol>,
-}
-
-impl P {
-    pub fn is_terminal(&self) -> bool {
-        if self.rules.len() == 1 {
-            if let Symbol::T(_) = self.rules[0] {
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-}
-
-impl Display for P {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
-        write!(
-            f,
-            "{} -> {}",
-            self.nt,
-            self.rules
-                .iter()
-                .map(|r| r.to_string())
-                .collect::<Vec<String>>()
-                .join("")
-        )?;
-        Ok(())
-    }
-}
 
 #[derive(Clone)]
 struct TokenLexer {
@@ -780,14 +639,27 @@ impl TokenLexer {
 
     fn encode_delimited(&mut self, grp: Group) -> Symbol {
         let mut lexer = TokenLexer::new(grp.stream());
+        let sym = lexer.parse_rules();
         let rep = self.encode_rep();
-        let sym = lexer.parse_rule();
         // println!("encode_delimited sym: {sym:?}");
+        let op = self.encode_op();
         match rep {
-            Rep::Optional => Symbol::Compound(Box::new(Symbol::Optional(Box::new(sym))), Box::new(self.parse_rule())),
-            Rep::Plus => Symbol::Compound(Box::new(Symbol::Plus(Box::new(sym))), Box::new(self.parse_rule())),
-            Rep::Star => Symbol::Compound(Box::new(Symbol::Star(Box::new(sym))), Box::new(self.parse_rule())),
-            Rep::None => Symbol::Compound(Box::new(Symbol::Delimited(Box::new(sym))), Box::new(self.parse_rule())),
+            Rep::Optional => Symbol::Compound(
+                Box::new(Symbol::Optional(Box::new(Symbol::List(sym.unwrap())))),
+                Box::new(self.parse_expr(LHS::None, op)),
+            ),
+            Rep::Plus => Symbol::Compound(
+                Box::new(Symbol::Plus(Box::new(Symbol::List(sym.unwrap())))),
+                Box::new(self.parse_expr(LHS::None, op)),
+            ),
+            Rep::Star => Symbol::Compound(
+                Box::new(Symbol::Star(Box::new(Symbol::List(sym.unwrap())))),
+                Box::new(self.parse_expr(LHS::None, op)),
+            ),
+            Rep::None => Symbol::Compound(
+                Box::new(Symbol::Delimited(Box::new(Symbol::List(sym.unwrap())))),
+                Box::new(self.parse_expr(LHS::None, op)),
+            ),
         }
     }
 
@@ -842,10 +714,11 @@ impl TokenLexer {
                 self.eos = true;
                 Symbol::Compound(Box::new(lhs.symbol()), Box::new(Symbol::EOS))
             }
-            Op::None => {
-                Symbol::Compound(Box::new(lhs.symbol()), Box::new(self.parse_rule()))
-            }
-            _ => Symbol::Error(format!("unexpected expression: {} {op}\n Are you missing a full stop? 🤔", lhs.symbol().to_string())),
+            Op::None => Symbol::Compound(Box::new(lhs.symbol()), Box::new(self.parse_rule())),
+            _ => Symbol::Error(format!(
+                "unexpected expression: {} {op}\n Are you missing a full stop? 🤔",
+                lhs.symbol().to_string()
+            )),
         };
         // println!("parse_postfix postfix: {postfix:?}");
         postfix
@@ -853,7 +726,7 @@ impl TokenLexer {
 
     fn parse_expr(&mut self, lhs: LHS, op: Op) -> Symbol {
         // println!("parse_expr lhs: {lhs:?} op: {op:?}");
-        
+
         let expr = match op {
             Op::Infix(infix_op) => {
                 let infix = self.parse_infix(lhs, infix_op);
@@ -889,7 +762,7 @@ impl TokenLexer {
                     // println!("parse_rule eos: {}", self.eos);
                     return expr;
                 }
-                Primary::Delimited(sym) => sym,
+                Primary::Delimited(sym) => {println!("{sym:?}"); sym},
                 Primary::None => Symbol::Error(format!("invalid primary token: {token:?}")),
             }
         } else {
@@ -903,13 +776,12 @@ impl TokenLexer {
             // println!("parse_rules tt: {tt:?}");
             let rule = self.parse_rule();
             // println!("parse_rules rule: {rule:?}");
-            
+
             rules.push(rule);
             // println!("parse_rules eos: {}", self.eos);
             if self.eos() {
                 break;
             }
-            
         }
         // println!("parse_rules rules: {rules:?}");
         Some(rules)
@@ -918,70 +790,141 @@ impl TokenLexer {
 
 struct AST {}
 
+#[derive(Debug)]
 struct Enum {
     name: String,
     variants: Vec<Variant>,
 }
 
-struct Variant(Vec<String>);
-
-struct Parser {
-    grammar: Vec<P>,
-    terminals: BTreeMap<String, usize>,
-    keywords: Vec<String>,
-}
-
-impl Parser {
-    pub fn new(grammar: Vec<P>) -> Self {
+impl Enum {
+    pub fn new(name: String) -> Self {
         Self {
-            grammar,
-            terminals: BTreeMap::<String, usize>::new(),
-            keywords: Vec::<String>::new(),
+            name,
+            variants: Vec::<Variant>::new()
         }
     }
 
+    pub fn add_variant(&mut self, variant: Variant) {
+        self.variants.push(variant);
+    }
+
+}
+
+#[derive(Debug)]
+enum Variant {
+    Tuple(Box<dyn Any>),
+    Unit,
+
+}
+
+impl Variant {
+    
+    
+
+    
+}
+
+#[derive(Debug)]
+enum Type {
+    Tuple,
+    Unit,
+    Undefined
+}
+
+struct ParserBuilder {
+    grammar: Peekable<std::vec::IntoIter<P>>,
+    stack: Vec<Symbol>,
+    nterminals: Vec<String>,
+    enums: Vec<String>,
+    terminals: Vec<String>,
+    ast: Vec<Enum>,
+}
+
+impl ParserBuilder {
+    pub fn new(grammar: Vec<P>) -> Self {
+        Self {
+            grammar: grammar.into_iter().peekable(),
+            stack: Vec::<Symbol>::new(),
+            terminals: Vec::<String>::new(),
+            nterminals: Vec::<String>::new(),
+            enums: Vec::<String>::new(),
+            ast: Vec::<Enum>::new(),
+        }
+    }
+
+    fn next(&mut self) -> Option<P> {
+        self.grammar.next()
+    }
+
+    fn peek(&mut self) -> Option<&P> {
+        self.grammar.peek()
+    }
+
     pub fn build(mut self) -> Self {
-        let terminal_indices = self
-            .grammar
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| p.is_terminal())
-            .map(|(i, _)| i)
-            .collect::<Vec<usize>>();
 
-        let terminals = BTreeMap::<String, usize>::from_iter(
-            terminal_indices
-                .into_iter()
-                .map(|i| (self.grammar[i].nt.clone(), i)),
-        );
-
-        self.terminals = terminals;
-
-        let mut iter = self.grammar.iter();
-
-        while let Some(ref p) = iter.next() {
-            let rule_name = p.nt.clone();
-            let alternatives = p.rules.clone();
+        while let Some(ref p) = self.grammar.peek().cloned() {
+            
+            self.enums.push(p.nt.clone());
+            let rules = p.rules.clone();
+            for rule in rules {
+                self.parse(rule);
+            }
         }
 
         self
     }
-    pub fn parse(&self, src: String) {
-        let mut lexer = StringLexer::new(&src);
-        while let Some(ch) = lexer.peek().cloned() {
-            let mut s = String::from_iter([ch]);
-            lexer.next();
-            let max = self.terminals.keys().max().unwrap().len();
-            while !self.terminals.contains_key(&s) {
-                if s.len() >= max {
-                    panic!("invalid token: {}", s);
-                }
-                if let Some(next) = lexer.next() {
-                    s.push(next);
-                }
+    pub fn parse(&mut self, rule: Symbol) {
+
+        match rule.clone() {
+            Symbol::NT(nt) => {
+                    self.nterminals.push(nt);
+                
+            }
+            Symbol::T(t) => {
+                
+            }
+            Symbol::Compound(lhs, rhs) => {
+
+            }
+            Symbol::OpenRange(_, _) => {
+
+            }
+            Symbol::HalfOpenRange(_, _) => {
+
+            }
+            Symbol::Delimited(_) => {
+
+            }
+            Symbol::Optional(_) => {
+
+            }
+            Symbol::Plus(_) => {
+
+            }
+            Symbol::Star(_) => {
+
+            }
+            Symbol::EOE => {
+
+            }
+            Symbol::EOS => {
+
+            }
+
+            _ => {
+
             }
         }
     }
+
+    fn push(&mut self, sym: Symbol) {
+        self.stack.push(sym);
+    }
+
+    fn pop(&mut self) -> Option<Symbol> {
+        self.stack.pop()
+    }
+
 }
 
 #[proc_macro]
@@ -993,6 +936,7 @@ pub fn cf(__ts: TokenStream) -> TokenStream {
     let mut ts = BTreeSet::<T>::new();
     let mut nts = BTreeSet::<NT>::new();
     let mut ps = Vec::<P>::new();
+    
 
     while let Some(__tt) = __lexer.peek().cloned() {
         // println!("__tt: {__tt:?}");
@@ -1039,7 +983,17 @@ pub fn cf(__ts: TokenStream) -> TokenStream {
 
     __output.extend([TokenTree::Literal(Literal::string(tts.as_str()))]);
 
+    eprintln!("{}", tokenize_str("decls -> decl | decl decls.").to_string());
+
     // __output.extend([TokenTree::Literal(Literal::string("\n👍🏻"))]);
 
     __output
+}
+
+
+#[test]
+fn test_tokenizer() {
+    assert_eq!(tokenize_str("decls -> decl | decl decls.").to_string(), "decls -> decl | decl decls.".to_string());
+    eprintln!("{}", tokenize_str("decls -> decl | decl decls.").to_string());
+    // assert_eq!(tokenize_str("decls -> (decl)+.").to_string(), " -> (decl)+ .".to_string());
 }

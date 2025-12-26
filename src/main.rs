@@ -4,7 +4,7 @@ fn main() {
     println!(
         "{}",
         cf!(
-
+          decls -> decl | decl decls.
           decl -> importdecl | assdecl.
           importdecl -> "import" ident ("," ident)* "from" ident | "import" ident.
           assdecl -> ident (params)? "=" expr | cmpndassdecl.
@@ -18,8 +18,10 @@ fn main() {
           closedR -> "(" ord "," ord ")" | ord lt ord lt ord.
           halfL -> "[" ord "," ord ")" | ord le ord lt ord.
           halfR -> "(" ord "," ord "]" | ord lt ord le ord.
-          digit -> "0".."9".
+          ident -> ( alpha | underscore ) (alpha | digit | underscore)* .
+          digit -> '0'..'9'.
           alpha -> "A"..="Z" | "a"..= "z".
+          underscore -> "_".
           op -> ass
             | cmpndass
             | plus
@@ -38,10 +40,11 @@ fn main() {
             | not
             | opt.
           ass -> "=".
-          cmpndass -> "+="
-            | "-="
-            | "*="
-            | "/=".
+          cmpndass -> pluseq | mineq | muleq | diveq.
+          pluseq -> "+=".
+          mineq -> "-=".
+          muleq -> "*=".
+          diveq -> "/=".
           plus -> "+".
           min -> "-".
           mul -> "*".
